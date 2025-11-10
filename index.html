@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>G3 - Reportes de Grafo de Compras</title>
+    <script src="https://unpkg.com/neo4j-driver"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #1e1e1e; color: #d4d4d4; }
+        h1 { color: #008f82; border-bottom: 2px solid #008f82; padding-bottom: 10px; }
+        .controls { margin-bottom: 20px; }
+        .controls button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .controls button:hover { background-color: #0056b3; }
+        #results { margin-top: 20px; background: #252526; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #3d3d3d; padding: 12px; text-align: left; }
+        th { background-color: #333; color: #008f82; font-weight: bold; }
+        tr:nth-child(even) { background-color: #2a2a2a; }
+        .error { color: #ff5555; font-weight: bold; }
+        .loading { color: #008f82; }
+    </style>
+</head>
+<body>
+    <h1>📊 Reportes de Grafos de Compras</h1>
+    <div class="controls">
+        <button onclick="runQuery(QUERIES.CLIENTES, 'Lista de Todos los Clientes')">👥 Clientes</button>
+        <button onclick="runQuery(QUERIES.PRODUCTOS, 'Lista de Todos los Productos')">📦 Productos</button>
+        <button onclick="runQuery(QUERIES.TOP_VENTAS, '🏆 Top 3 Productos Más Vendidos')">🏆 Top 3 Ventas</button>
+    </div>
+    <div id="results">Selecciona un reporte para comenzar.</div>
+
+   <script>
+    const NEO4J_URI = 'neo4j+s://b971609c.databases.neo4j.io'; 
+    const NEO4J_USER = 'neo4j'; 
+    const NEO4J_PASSWORD = 'WbSk4kV52Mhl4GJhAs67gok2ahUmQ94H12kA1Yfg2iY'; 
+
+    const QUERIES = {
+        CLIENTES: {
+            cypher: `MATCH (u:Usuario) RETURN u.nombre AS Nombre, u.id AS ID`,
+            headers: ['Nombre', 'ID']
+        },
+        PRODUCTOS: {
+            cypher: `MATCH (p:Producto) RETURN p.nombre AS Producto, p.precio AS Precio`,
+            headers: ['Producto', 'Precio']
+        },
+        TOP_VENTAS: {
+            cypher: `MATCH ()-[r:COMPRA]->(p:Producto) 
+                     RETURN p.nombre AS NombreProducto, sum(r.cantidad) AS TotalUnidadesVendidas 
+                     ORDER BY TotalUnidadesVendidas DESC LIMIT 3`,
+            headers: ['NombreProducto', 'TotalUnidadesVendidas']
+        }
+    };
+
+    async function runQuery(queryData, title) {
+        const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
+        const session = driver.session();
+        const resultsDiv = document.getElementById('results');
+        resultsDiv.innerHTML = `<p class="loading">Cargando ${title}... Por favor, espera.</p>`;
+
+        try {
+            const result = await session.run(queryData.cypher);
+
+            if (result.records.length === 0) {
+                resultsDiv.innerHTML = `<p class="error">❌ No se encontraron datos para ${title}. ¿El grafo está creado?</p>`;
+                return;
+            }
+
+            let tableHTML = `<h2>${title}</h2>`;
+            tableHTML += '<table><thead><tr>';
+
+            queryData.headers.forEach(header => { tableHTML += `<th>${header}</th>`; });
+            tableHTML += '</tr></thead><tbody>';
+
+            result.records.forEach(record => {
+                tableHTML += '<tr>';
+                queryData.headers.forEach(header => {
+                    let value = record.get(header);
+                    if (header === 'Precio' && typeof value === 'number') {
+                        value = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'USD' }).format(value);
+                    }
+                    tableHTML += `<td>${value}</td>`;
+                });
+                tableHTML += '</tr>';
+            });
+
+            tableHTML += '</tbody></table>';
+            resultsDiv.innerHTML = tableHTML;
+
+        } catch (error) {
+            console.error(`Error al ejecutar ${title}:`, error);
+            resultsDiv.innerHTML = `<p class="error">❌ Error: ${error.message}. Verifica credenciales y conexión.</p>`;
+        } finally {
+            await session.close();
+            await driver.close();
+        }
+    }
+</script>
+</body>
+</html>
